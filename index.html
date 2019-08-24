@@ -1,0 +1,191 @@
+<html>
+  <head>
+    <script
+      crossorigin
+      src="https://unpkg.com/react@16/umd/react.development.js"
+    ></script>
+    <script
+      crossorigin
+      src="https://unpkg.com/react-dom@16/umd/react-dom.development.js"
+    ></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.19.0/axios.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-router-dom/5.0.1/react-router-dom.js"></script>
+    <style>
+      body {
+        font-family: sans-serif;
+      }
+      li {
+        display: flex;
+        flex-direction: column;
+      }
+      select {
+        height: 2rem;
+        /* border: solid 1px black; */
+      }
+
+    </style>
+  </head>
+  <body>
+    <h1>Acme Company Followers</h1>
+    <div id="root"></div>
+    <script type="text/babel">
+      const { render } = ReactDOM;
+      const { createElement, Component } = React;
+      const { Route, HashRouter, Link, Redirect, Switch } = ReactRouterDOM;
+      const root = document.querySelector("#root");
+
+      const API = "https://acme-users-api-rev.herokuapp.com/api";
+
+      const fetchUser = async () => {
+        const storage = window.localStorage;
+        const userId = storage.getItem("userId");
+        if (userId) {
+          try {
+            return (await axios.get(`${API}/users/detail/${userId}`)).data;
+          } catch (ex) {
+            storage.removeItem("userId");
+            return fetchUser();
+          }
+        }
+        const user = (await axios.get(`${API}/users/random`)).data;
+        storage.setItem("userId", user.id);
+        return user;
+      };
+
+      const CompanyFollowing = ({ company, followed, onChange }) => {
+        console.log('inside company', followed)
+        return (
+          <li>
+            {company.name}
+            <select
+              value={followed ? followed.rating : ""}
+              onChange={ev => onChange(company, followed, ev.target.value)}
+            >
+              {["", 1, 2, 3, 4, 5].map(num => (
+                <option key={num}>{num}</option>
+              ))}
+            </select>
+          </li>
+        );
+      };
+
+      class App extends Component {
+        constructor() {
+          super();
+          this.state = {
+            user: {},
+            companies: [],
+            following: [],
+            error: ""
+          };
+          this.onChange = this.onChange.bind(this);
+        }
+        async componentDidMount() {
+          const user = await fetchUser();
+          const companies = (await axios.get(`${API}/companies`)).data;
+          const following = (await axios.get(
+            `${API}/users/${user.id}/followingCompanies`
+          )).data;
+          console.log(following);
+          this.setState({ user, companies, following });
+        }
+        async onChange( company, followed, rating) {
+          this.setState({ error: "" });
+          let following = this.state.following
+          if (followed) {
+            console.log(followed)
+
+
+            if (rating) {
+              const payload = {
+                companyId: company.id,
+                rating
+              };
+              try {
+                const updated = (await axios.put(
+                  `${API}/users/${this.state.user.id}/followingCompanies/${
+                    followed.id
+                  }`,
+                  {rating}
+                )).data;
+                 following = this.state.following.map(f =>
+                  { return  f.id === updated.id ? f : updated}
+                );
+
+              } catch (ex) {
+                this.setState({ error: ex.response.data.massage });
+              }
+
+
+
+            } else {
+
+              try {
+                await axios.delete(
+                  `${API}/users/${this.state.user.id}/followingCompanies/${
+                    followed.id
+                  }`
+                );
+
+                  following = this.state.following.filter(
+                    f => f.id !== followed.id
+                  )
+              } catch (ex) {
+                this.setState({ error: ex.response.data.massage });
+              }
+            }
+
+
+
+          } else {
+            const payload = {
+              companyId: company.id,
+              rating
+            };
+            try {
+              const followed = (await axios.post(
+                `${API}/users/${this.state.user.id}/followingCompanies`,
+                payload
+              )).data;
+             following= [...this.state.following, followed]
+            } catch (ex) {
+              this.setState({ error: ex.response.data.massage });
+            }
+          }
+          this.setState({following})
+
+        }
+
+        render() {
+          const { companies, user, following, error } = this.state;
+          const { onChange } = this;
+          //const mapped = following.reduce((acc, f) => {
+          //acc[f.companyId] = f;
+          //return acc,
+          //}, {})
+          //replaces the following.find {mapped[company.id]}
+          return (
+            <div>
+              <h3>
+                You ({user.fullName}) are following {following.length} Companies
+              </h3>
+              <ul>
+                {companies.map(company => (
+                  <CompanyFollowing
+                    key={company.id}
+                    company={company}
+                    onChange={onChange}
+                    user={user}
+                    followed={following.find(f => f.companyId === company.id)}
+                  />
+                ))}
+              </ul>
+            </div>
+          );
+        }
+      }
+      render(<App />, root);
+    </script>
+  </body>
+</html>
